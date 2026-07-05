@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VCT - PHIẾU CHẤM ĐIỂM</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 p-4 min-h-screen flex items-center justify-center">
+
+    <div class="w-full max-w-sm bg-white shadow-2xl rounded-2xl overflow-hidden border border-slate-200">
+        <div class="bg-[#107c41] text-white p-4 text-center font-bold tracking-widest uppercase">
+            Phiếu Chấm Điểm
+        </div>
+        
+        <div class="p-6 space-y-5">
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase">Vị Trí:</label>
+                    <select id="judge_id" onchange="saveJudgeId()" class="w-full border-b-2 border-slate-300 py-1 font-bold text-emerald-800 focus:border-emerald-600 outline-none">
+                        <option value="1">GK 1</option>
+                        <option value="2">GK 2</option>
+                        <option value="3">GK 3</option>
+                        <option value="4">GK 4</option>
+                        <option value="5">GK 5</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase">Mã VĐV:</label>
+                    <input type="text" id="athlete_id" value="---" readonly 
+                           class="w-full border-b-2 border-slate-300 py-1 font-mono font-bold text-slate-400 outline-none">
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-[10px] font-bold text-slate-500 uppercase text-center">Điểm số (0.0 - 10.0)</label>
+                <input type="number" id="score_value" step="0.1" min="0" max="10" placeholder="0.0"
+                       class="w-full text-center text-6xl font-black text-red-600 py-4 focus:outline-none" 
+                       oninput="validateScore(this)">
+            </div>
+            
+            <button onclick="submitScore()" id="btn-submit"
+                    class="w-full bg-[#107c41] hover:bg-[#0a5c30] text-white font-bold py-5 rounded-xl uppercase tracking-widest transition-all active:scale-95 shadow-lg">
+                Gửi điểm
+            </button>
+            
+            <div id="msg" class="text-center text-sm font-bold h-6"></div>
+        </div>
+        
+        <div class="bg-slate-50 p-2 text-center border-t border-slate-100">
+            <span id="status-tag" class="text-[10px] font-bold text-slate-400 uppercase">Đang kết nối...</span>
+        </div>
+    </div>
+
+    <script>
+        // --- CẤU HÌNH IP CỐ ĐỊNH ---
+        // BƯỚC QUAN TRỌNG: Thay IP này bằng IP máy tính chạy server 
+        // Thay vì dùng IP cứng, hãy lấy hostname của máy chủ từ chính URL hiện tại
+        
+	const SERVER_IP = window.location.hostname; 
+        const PORT = "8000";
+        const BASE_URL = `http://${SERVER_IP}:8000`;
+        const WS_URL = `ws://${SERVER_IP}:${PORT}/ws/live`;
+
+        window.onload = () => {
+            const savedJudgeId = localStorage.getItem('vct_judge_id');
+            if (savedJudgeId) document.getElementById('judge_id').value = savedJudgeId;
+        };
+
+        function saveJudgeId() {
+            localStorage.setItem('vct_judge_id', document.getElementById('judge_id').value);
+        }
+
+        function validateScore(input) {
+            if (input.value > 10) input.value = 10;
+            if (input.value < 0) input.value = 0;
+        }
+
+        const ws = new WebSocket(WS_URL);
+        
+        ws.onopen = () => {
+            document.getElementById('status-tag').innerText = "● Hệ thống sẵn sàng";
+            document.getElementById('status-tag').className = "text-[10px] font-bold text-emerald-600 uppercase";
+        };
+
+        ws.onclose = () => {
+            document.getElementById('status-tag').innerText = "○ Mất kết nối (F5 để thử lại)";
+            document.getElementById('status-tag').className = "text-[10px] font-bold text-red-600 uppercase";
+        };
+
+        ws.onmessage = (e) => {
+            try {
+                const data = JSON.parse(e.data);
+                if (data.event === "change_athlete") {
+                    document.getElementById('athlete_id').value = data.athlete_id;
+                    document.getElementById('score_value').value = "";
+                    document.getElementById('msg').innerText = "VĐV #" + data.athlete_id + " đã sẵn sàng!";
+                    document.getElementById('msg').className = "text-center text-blue-600 font-bold mt-2";
+                }
+            } catch (err) { console.error("Lỗi parse WS:", err); }
+        };
+
+        async function submitScore() {
+            const btn = document.getElementById('btn-submit');
+            const judgeId = document.getElementById('judge_id').value;
+            const athleteId = document.getElementById('athlete_id').value;
+            const score = document.getElementById('score_value').value;
+            const msg = document.getElementById('msg');
+
+            if (athleteId === "---") {
+                alert("Vui lòng đợi trọng tài chọn VĐV!");
+                return;
+            }
+
+            if (score === "" || parseFloat(score) < 0 || parseFloat(score) > 10) {
+                msg.innerText = "⚠️ ĐIỂM KHÔNG HỢP LỆ";
+                msg.className = "text-center text-red-600 font-bold mt-2";
+                return;
+            }
+
+            btn.disabled = true;
+            btn.innerText = "Đang gửi...";
+            btn.classList.add("opacity-50");
+
+            try {
+                const response = await fetch(`${BASE_URL}/api/submit-judge-score`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        athlete_id: parseInt(athleteId),
+                        judge_id: parseInt(judgeId),
+                        score_value: parseFloat(score)
+                    })
+                });
+
+                if (response.ok) {
+                    msg.innerText = "✅ GỬI THÀNH CÔNG";
+                    msg.className = "text-center text-emerald-600 font-bold mt-2";
+                    setTimeout(() => { 
+                        msg.innerText = ""; 
+                        btn.disabled = false; 
+                        btn.innerText = "Gửi điểm"; 
+                        btn.classList.remove("opacity-50"); 
+                    }, 2000);
+                } else {
+                    throw new Error("Server error");
+                }
+            } catch (e) {
+                msg.innerText = "❌ LỖI KẾT NỐI SERVER";
+                btn.disabled = false;
+                btn.innerText = "Gửi điểm";
+                btn.classList.remove("opacity-50");
+            }
+        }
+    </script>
+</body>
+</html>

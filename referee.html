@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>VCT - Bảng Điều Hành Trọng Tài</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 p-6 text-white min-h-screen">
+    <div class="max-w-2xl mx-auto bg-slate-900 border border-slate-700 rounded-xl p-6 shadow-2xl">
+        <h2 class="text-xl font-bold text-cyan-400 mb-6 flex justify-between">
+            🛡️ BẢNG ĐIỀU HÀNH TRỌNG TÀI
+            <span id="ref-athlete" class="text-yellow-400 font-mono">VĐV: 101</span>
+        </h2>
+
+        <div class="bg-slate-800 p-4 rounded-lg mb-6 border border-slate-700">
+            <h3 class="text-xs font-bold uppercase text-slate-400 mb-3">Nội dung thi đấu</h3>
+            <input type="text" id="round-name" placeholder="Ví dụ: Chung Kết Nam" class="w-full bg-slate-700 p-2 rounded mb-3 text-white border border-slate-600 focus:border-cyan-500 outline-none">
+            
+            <h3 class="text-xs font-bold uppercase text-slate-400 mb-3">Đăng ký VĐV</h3>
+            <div class="flex gap-2">
+                <input type="number" id="reg-id" placeholder="ID" class="w-20 bg-slate-700 p-2 rounded text-center">
+                <input type="text" id="reg-name" placeholder="Họ và tên" class="flex-grow bg-slate-700 p-2 rounded px-3">
+                <button onclick="registerAthlete()" class="bg-green-600 hover:bg-green-700 px-4 rounded font-bold">LƯU</button>
+            </div>
+        </div>
+        
+        <div class="grid grid-cols-5 gap-4 mb-8">
+            <script>
+                for(let i=1; i<=5; i++) {
+                    document.write(`
+                        <div class="bg-slate-800 p-4 rounded-lg border border-slate-700 text-center">
+                            <div class="text-[10px] uppercase text-slate-400 font-bold">GK ${i}</div>
+                            <div id="monitor-GK${i}" class="text-2xl font-black text-slate-600 mt-2">--</div>
+                        </div>`);
+                }
+            </script>
+        </div>
+
+        <div class="mb-6">
+            <label class="block text-slate-400 text-xs mb-2">Chuyển VĐV đang thi đấu (ID):</label>
+            <div class="flex gap-2">
+                <input type="number" id="ref-athlete-id" value="101" class="w-full bg-slate-800 p-3 rounded border border-slate-700 font-bold text-center text-xl">
+                <button onclick="updateAthlete()" class="bg-indigo-600 hover:bg-indigo-700 px-6 rounded font-bold uppercase">ÁP DỤNG</button>
+            </div>
+        </div>
+
+        <button onclick="publishToMain()" class="w-full bg-blue-600 hover:bg-blue-700 py-4 rounded-lg font-bold uppercase tracking-widest transition mb-4">
+            📢 CÔNG BỐ ĐIỂM
+        </button>
+
+        <button onclick="exportData()" class="w-full bg-purple-600 hover:bg-purple-700 py-3 rounded-lg font-bold uppercase tracking-widest transition">
+            💾 XUẤT EXCEL
+        </button>
+
+        <div id="ref-msg" class="text-center mt-3 text-sm font-bold h-6"></div>
+    </div>
+
+    <script>
+       
+// Thay vì dùng IP cứng, hãy lấy hostname của máy chủ từ chính URL hiện tại
+const SERVER_IP = window.location.hostname; 
+const BASE_URL = `http://${SERVER_IP}:8000`;
+const ws = new WebSocket(`ws://${SERVER_IP}:8000/ws/live`);
+        
+        ws.onmessage = (e) => {
+            const data = JSON.parse(e.data);
+            if (data.event === "judge_score_received") {
+                const el = document.getElementById(`monitor-GK${data.judge_id}`);
+                if(el) {
+                    el.innerText = data.score;
+                    el.className = "text-2xl font-black text-green-400 mt-2";
+                }
+            }
+            if (data.event === "change_athlete") {
+                document.getElementById('ref-athlete').innerText = `VĐV: ${data.athlete_id}`;
+                for(let i=1; i<=5; i++) {
+                    const el = document.getElementById(`monitor-GK${i}`);
+                    if(el) {
+                        el.innerText = "--";
+                        el.className = "text-2xl font-black text-slate-600 mt-2";
+                    }
+                }
+            }
+        };
+
+        async function registerAthlete() {
+            const id = document.getElementById('reg-id').value;
+            const name = document.getElementById('reg-name').value;
+            const roundName = document.getElementById('round-name').value;
+            await fetch(`${BASE_URL}/api/update-athlete-info`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ athlete_id: parseInt(id), name: name, round_name: roundName })
+            });
+            showMsg("✅ Đã cập nhật VĐV & Nội dung", "text-green-400");
+        }
+
+        function updateAthlete() {
+            const newId = document.getElementById('ref-athlete-id').value;
+            fetch(`${BASE_URL}/api/set-active-athlete`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ athlete_id: parseInt(newId) })
+            });
+        }
+
+        async function publishToMain() {
+            const athId = document.getElementById('ref-athlete-id').value;
+            await fetch(`${BASE_URL}/api/publish-score`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ athlete_id: parseInt(athId) })
+            });
+            showMsg("📢 Đã công bố điểm!", "text-blue-400");
+        }
+
+        function exportData() {
+            const roundName = document.getElementById('round-name').value.trim() || "Ket_Qua";
+            window.location.href = `${BASE_URL}/api/export-excel/${encodeURIComponent(roundName)}`;
+            showMsg("📥 Đang tải file...", "text-purple-400");
+        }
+
+        function showMsg(text, colorClass) {
+            const msg = document.getElementById('ref-msg');
+            msg.innerText = text;
+            msg.className = `text-center mt-3 text-sm font-bold ${colorClass}`;
+            setTimeout(() => msg.innerText = "", 3000);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>VCT Olympic - Màn Hình Công Bố</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Màu xanh lá đậm đặc trưng Võ Cổ Truyền */
+        .vct-bg { background-color: #064e3b; }
+        .vct-darker { background-color: #022c22; }
+    </style>
+</head>
+<body class="vct-bg text-white p-8 min-h-screen">
+
+<div class="max-w-6xl mx-auto">
+    <div class="flex justify-between items-center mb-8 bg-vct-darker p-6 rounded-2xl border border-emerald-700 shadow-xl">
+        <div id="round-display" class="text-3xl text-yellow-400 font-bold uppercase tracking-widest">Nội dung: --</div>
+        <button onclick="lockAndSort()" class="bg-red-700 hover:bg-red-800 px-8 py-3 rounded-lg font-bold uppercase transition border border-red-500">
+            🔒 Chốt & Xếp hạng
+        </button>
+    </div>
+
+    <h1 class="text-4xl font-black text-center text-yellow-300 mb-8 uppercase drop-shadow-lg">Bảng Xếp Hạng Kết Quả</h1>
+    
+    <table class="w-full vct-darker border border-emerald-800 rounded-2xl overflow-hidden shadow-2xl">
+        <thead class="bg-emerald-900 text-emerald-100 text-sm uppercase">
+            <tr>
+                <th class="p-5 text-left">Vận động viên</th>
+                <th class="p-5">GK1</th><th class="p-5">GK2</th><th class="p-5">GK3</th><th class="p-5">GK4</th><th class="p-5">GK5</th>
+                <th class="p-5 text-yellow-300">Tổng</th>
+                <th class="p-5">Hạng</th>
+            </tr>
+        </thead>
+        <tbody id="rank-table-body" class="text-center font-mono text-lg"></tbody>
+    </table>
+</div>
+
+<script>
+    // Sử dụng biến toàn cục để lưu trữ dữ liệu bền vững
+    let athleteData = []; 
+    let isLocked = false; 
+
+    const ws = new WebSocket(`ws://${window.location.host}/ws/live`);
+    
+    ws.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            
+            // 1. Reset khi đổi nội dung thi đấu
+            if (data.event === "session_update") {
+                document.getElementById('round-display').innerText = "Nội dung: " + data.round_name;
+                athleteData = []; // Làm sạch danh sách
+                isLocked = false;
+                renderTable();
+            }
+
+            // 2. Cộng dồn VĐV vào danh sách
+            if (data.event === "score_updated") {
+                const newEntry = {
+                    id: data.athlete_id,
+                    name: data.athlete_name || `VĐV #${data.athlete_id}`,
+                    scores: Object.values(data.all_scores),
+                    final: data.final_score
+                };
+
+                // Kiểm tra xem VĐV đã tồn tại chưa để cập nhật, nếu chưa thì push vào
+                const existingIndex = athleteData.findIndex(ath => ath.id === data.athlete_id);
+                if (existingIndex > -1) {
+                    athleteData[existingIndex] = newEntry;
+                } else {
+                    athleteData.push(newEntry);
+                }
+                
+                // Luôn render lại bảng với danh sách đầy đủ
+                renderTable();
+            }
+        } catch (err) { console.error("Lỗi xử lý WebSocket:", err); }
+    };
+
+    function renderTable() {
+        const tbody = document.getElementById('rank-table-body');
+        // Xóa hoàn toàn nội dung cũ trước khi vẽ lại
+        tbody.innerHTML = '';
+        
+        // Tạo bản sao để sắp xếp mà không làm thay đổi thứ tự gốc nếu đang thi đấu
+        let displayData = isLocked 
+            ? [...athleteData].sort((a, b) => b.final - a.final) 
+            : [...athleteData].sort((a, b) => a.id - b.id);
+        
+        // Vẽ danh sách mới
+        displayData.forEach((ath, index) => {
+            const row = document.createElement('tr');
+            row.className = "border-b border-emerald-900 hover:bg-emerald-800/30 transition";
+            
+            // Đảm bảo số lượng cột điểm luôn là 5 (hiển thị -- nếu thiếu)
+            let scoresHtml = '';
+            for(let i=0; i<5; i++) {
+                scoresHtml += `<td class="p-5">${ath.scores[i] !== undefined ? ath.scores[i].toFixed(1) : '--'}</td>`;
+            }
+
+            row.innerHTML = `
+                <td class="p-5 text-left font-bold text-yellow-400">
+                    #${ath.id} <span class="text-white font-normal ml-2">${ath.name}</span>
+                </td>
+                ${scoresHtml}
+                <td class="p-5 font-black text-yellow-300 text-2xl">${ath.final.toFixed(2)}</td>
+                <td class="p-5 font-bold text-xl">${isLocked ? (index + 1) : '--'}</td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+
+    function lockAndSort() {
+        isLocked = true;
+        renderTable();
+    }
+</script>
+</body>
+</html>
